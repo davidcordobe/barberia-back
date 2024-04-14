@@ -35,7 +35,7 @@ const turnoSchema = new mongoose.Schema({
     fechaHora: { type: Date, required: true },
     estado: { type: String, enum: ['disponible', 'reservado', 'cancelado'], default: 'disponible' },
     cliente: { type: String, default: null },
-    Servicio: { type: String, required: true }
+    tipoServicio: { type: String, required: true }
 });
 
 const Turno = mongoose.model('Turno', turnoSchema);
@@ -43,7 +43,7 @@ const Turno = mongoose.model('Turno', turnoSchema);
 // Función para enviar correo electrónico al cliente con la fecha y hora del turno
 const enviarCorreoElectronico = async (fechaFormateada) => {
     try {
-        const mensaje = `${cliente} Tu turno ha sido reservado para el ${fechaFormateada} para el servicio ${Servicio}.`;
+        const mensaje = `${cliente} Tu turno ha sido reservado para el ${fechaFormateada} para el servicio ${tipoServicio}.`;
         await transporter.sendMail({
             from: process.env.EMAIL_USER,
             to: process.env.EMAIL_CONTACTO,
