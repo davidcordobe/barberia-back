@@ -42,7 +42,7 @@ const Turno = mongoose.model('Turno', turnoSchema);
 
 const enviarCorreoElectronico = async (cliente, fechaFormateada, tipoServicio) => {
     try {
-        const mensaje = `${cliente}, tu turno ha sido reservado para el ${fechaFormateada} para el servicio ${tipoServicio}.`;
+        const mensaje = `El ${cliente}, reservo el turno para el dia ${fechaFormateada} y para el servicio ${tipoServicio}.`;
         await transporter.sendMail({
             from: process.env.EMAIL_USER,
             to: process.env.EMAIL_CONTACTO,
