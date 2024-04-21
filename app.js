@@ -82,7 +82,8 @@ const obtenerHorariosDisponibles = async () => {
     return horariosDisponibles;
 };
 
-cron.schedule('0 0 * * *', eliminarTurnosPasados);
+cron.schedule('*/30 * * * *', eliminarTurnosPasados);
+
 
 app.get('/turnos', async (req, res) => {
     try {
