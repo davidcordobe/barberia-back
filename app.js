@@ -3,6 +3,8 @@ const cors = require('cors');
 const nodemailer = require('nodemailer');
 const connectToDatabase = require('./db');
 const moment = require('moment');
+require('moment/locale/es'); // Asegurarse de requerir el locale español
+moment.locale('es'); // Configurar moment para usar español
 const mercadopago = require('mercadopago');
 const PORT = process.env.PORT || 5000;
 require('dotenv').config();
@@ -162,6 +164,7 @@ app.get('/turnos/horarios-disponibles', async (req, res) => {
         res.status(500).json({ message: 'Error interno al procesar la solicitud' });
     }
 });
+
 
 
 // Función para obtener los horarios disponibles según el día de la semana
