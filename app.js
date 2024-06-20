@@ -112,6 +112,10 @@ app.get('/turnos/confirmar', async (req, res) => {
 });
 
 // Endpoint para obtener los horarios disponibles
+const capitalizeFirstLetter = (string) => {
+    return string.charAt(0).toUpperCase() + string.slice(1);
+};
+
 app.get('/turnos/horarios-disponibles', async (req, res) => {
     const { fecha } = req.query;
 
@@ -125,7 +129,8 @@ app.get('/turnos/horarios-disponibles', async (req, res) => {
 
         console.log("Fecha recibida en el backend:", fecha); // Debug
         // Obtener el día de la semana para la fecha especificada
-        const diaSemana = moment(fecha).format('dddd');
+        let diaSemana = moment(fecha).format('dddd');
+        diaSemana = capitalizeFirstLetter(diaSemana); // Asegurarse de que el día de la semana está capitalizado
         console.log("Día de la semana calculado:", diaSemana); // Debug
 
         // Verificar si es domingo y retornar un error si es así
@@ -158,6 +163,7 @@ app.get('/turnos/horarios-disponibles', async (req, res) => {
     }
 });
 
+
 // Función para obtener los horarios disponibles según el día de la semana
 const obtenerHorariosDisponibles = (diaSemana) => {
     const horariosDisponibles = {
@@ -170,8 +176,13 @@ const obtenerHorariosDisponibles = (diaSemana) => {
         // Puedes añadir más días y horarios según tu disponibilidad
     };
 
+    // Asegurarse de que diaSemana está en el formato correcto
+    console.log("Día de la semana recibido:", diaSemana); // Debug
+    console.log("Horarios para el día:", horariosDisponibles[diaSemana] || []); // Debug
+
     return horariosDisponibles[diaSemana] || [];
 };
+
 
 // Función para borrar turnos antiguos
 const borrarTurnosAntiguos = async () => {
