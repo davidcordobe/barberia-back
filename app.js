@@ -11,11 +11,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Configurar MercadoPago
 mercadopago.configure({
     access_token: process.env.MERCADOPAGO_ACCESS_TOKEN
 });
 
-// Configuración del transporter de nodemailer
+// Configurar nodemailer
 const transporter = nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port: 465,
@@ -26,21 +27,7 @@ const transporter = nodemailer.createTransport({
     },
 });
 
-const enviarCorreoElectronico = async (cliente, fechaFormateada, tipoServicio, emailCliente) => {
-    try {
-        const mensaje = `El cliente ${cliente}, reservó el turno para el día ${fechaFormateada} y para el servicio ${tipoServicio}.`;
-        await transporter.sendMail({
-            from: process.env.EMAIL_USER,
-            to: [process.env.EMAIL_CONTACTO, emailCliente],
-            subject: 'Turno reservado exitosamente',
-            text: mensaje,
-        });
-        console.log('Correo electrónico enviado correctamente');
-    } catch (err) {
-        console.error('Error al enviar correo electrónico:', err);
-    }
-};
-
+// Endpoint para reservar turno
 app.post('/turnos/reservar', async (req, res) => {
     const { fechaHora, nombreCliente, tipoServicio, montoSeña, emailCliente } = req.body;
 
@@ -48,20 +35,20 @@ app.post('/turnos/reservar', async (req, res) => {
         const db = await connectToDatabase();
         const turnosCollection = db.collection('turnos');
 
-        // Verificar si el turno ya existe
+        // Verificar si el turno ya está reservado
         const turnoExistente = await turnosCollection.findOne({ fechaHora });
         if (turnoExistente) {
             return res.status(400).json({ message: 'El turno para esta fecha y hora ya está reservado' });
         }
 
-        // Convertir montoSeña a número y verificar
+        // Convertir montoSeña a número
         const montoSeñaNumero = Number(montoSeña);
         if (isNaN(montoSeñaNumero)) {
-            throw new Error('montoSeña debe ser un número');
+            throw new Error('El monto de la seña debe ser un número válido');
         }
 
-        // Crear preferencia de pago en Mercado Pago
-        let preference = {
+        // Crear preferencia de pago en MercadoPago
+        const preference = {
             items: [{
                 title: `Reserva de turno: ${tipoServicio}`,
                 quantity: 1,
@@ -80,16 +67,16 @@ app.post('/turnos/reservar', async (req, res) => {
             external_reference: fechaHora // Usamos fechaHora como referencia externa
         };
 
-        console.log('Preferencia creada:', preference);
-
+        // Crear la preferencia en MercadoPago
         const response = await mercadopago.preferences.create(preference);
 
+        // Enviar respuesta con el init_point de MercadoPago
         res.status(200).json({
             message: 'Inicie el pago de la seña para confirmar la reserva',
             init_point: response.body.init_point
         });
-    } catch (err) {
-        console.error('Error al reservar el turno:', err);
+    } catch (error) {
+        console.error('Error al reservar el turno:', error);
         res.status(500).json({ message: 'Error interno al procesar la solicitud' });
     }
 });
@@ -97,8 +84,6 @@ app.post('/turnos/reservar', async (req, res) => {
 // Endpoint para confirmar el turno después del pago
 app.get('/turnos/confirmar', async (req, res) => {
     const { payment_id, status, external_reference, nombreCliente, tipoServicio, emailCliente } = req.query;
-
-    console.log('Received parameters:', { payment_id, status, external_reference, nombreCliente, tipoServicio, emailCliente });
 
     if (status !== 'approved') {
         return res.status(400).json({ message: 'El pago no fue aprobado' });
@@ -108,70 +93,84 @@ app.get('/turnos/confirmar', async (req, res) => {
         const db = await connectToDatabase();
         const turnosCollection = db.collection('turnos');
 
-        // Insertar nuevo turno
+        // Insertar nuevo turno reservado
         await turnosCollection.insertOne({
             fechaHora: external_reference,
             nombreCliente,
             tipoServicio
         });
 
+        // Formatear fecha y enviar correo electrónico de confirmación
         const fechaFormateada = moment(external_reference).format('DD-MM-YYYY HH:mm');
         await enviarCorreoElectronico(nombreCliente, fechaFormateada, tipoServicio, emailCliente);
 
         res.status(201).json({ message: 'Turno reservado exitosamente' });
-    } catch (err) {
-        console.error('Error al confirmar el turno:', err);
+    } catch (error) {
+        console.error('Error al confirmar el turno:', error);
         res.status(500).json({ message: 'Error interno al procesar la solicitud' });
     }
 });
 
+// Endpoint para obtener los horarios disponibles
 app.get('/turnos/horarios-disponibles', async (req, res) => {
     const { fecha } = req.query;
 
     if (!fecha) {
-        return res.status(400).json({ message: 'Fecha es requerida' });
+        return res.status(400).json({ message: 'Se requiere la fecha para obtener los horarios disponibles' });
     }
 
     try {
         const db = await connectToDatabase();
         const turnosCollection = db.collection('turnos');
 
-        const turnos = await turnosCollection.find({ fechaHora: { $regex: `^${fecha}` } }).toArray();
-        const horasReservadas = turnos.map(turno => new Date(turno.fechaHora).getHours());
-
-        // Obtener día de la semana y horarios disponibles
+        console.log("Fecha recibida en el backend:", fecha); // Debug
+        // Obtener el día de la semana para la fecha especificada
         const diaSemana = moment(fecha).format('dddd');
-        const horariosDisponibles = obtenerHorariosDisponibles(diaSemana);
+        console.log("Día de la semana calculado:", diaSemana); // Debug
 
-        // Filtrar horarios disponibles según los ya reservados
-        const horariosDisponiblesFiltrados = horariosDisponibles.filter(hora => {
+        // Verificar si es domingo y retornar un error si es así
+        if (diaSemana.toLowerCase() === 'domingo') {
+            return res.status(400).json({ message: 'No se permiten reservas los días domingos' });
+        }
+
+        // Obtener los horarios disponibles para el día de la semana
+        const horariosDia = obtenerHorariosDisponibles(diaSemana);
+        console.log("Horarios disponibles para el día:", horariosDia); // Debug
+
+        // Obtener los turnos reservados para la fecha especificada
+        const turnosReservados = await turnosCollection.find({ fechaHora: { $regex: `^${fecha}` } }).toArray();
+        console.log("Turnos reservados para la fecha:", turnosReservados); // Debug
+
+        const horasReservadas = turnosReservados.map(turno => new Date(turno.fechaHora).getHours());
+        console.log("Horas reservadas:", horasReservadas); // Debug
+
+        // Filtrar los horarios disponibles basados en los turnos reservados
+        const horariosDisponiblesFiltrados = horariosDia.filter(hora => {
             const hour = Number(hora.split(':')[0]);
             return !horasReservadas.includes(hour);
         });
 
+        console.log("Horarios disponibles filtrados:", horariosDisponiblesFiltrados); // Debug
         res.status(200).json(horariosDisponiblesFiltrados);
-    } catch (err) {
-        console.error('Error al obtener horarios disponibles:', err);
+    } catch (error) {
+        console.error('Error al obtener los horarios disponibles:', error);
         res.status(500).json({ message: 'Error interno al procesar la solicitud' });
     }
 });
 
-// Función para obtener los horarios disponibles para un día de la semana
+// Función para obtener los horarios disponibles según el día de la semana
 const obtenerHorariosDisponibles = (diaSemana) => {
     const horariosDisponibles = {
-        "Lunes": ["09:00", "11:30", "13:30", "17:30"],
-        "Martes": ["09:00", "11:30", "15:00", "18:00"],
-        "Miércoles": ["09:00", "11:30", "13:30", "17:30"],
-        "Jueves": ["09:00", "11:30", "15:00", "18:00"],
-        "Viernes": ["09:00", "11:30", "13:00", "15:00", "18:00"],
-        "Sábado": ["10:00", "12:30", "15:00"],
-        // Agrega más días y horarios según tu disponibilidad
+        "Lunes": ["08:00", "09:00", "10:00", "11:00"],
+        "Martes": ["08:00", "09:00", "10:00", "11:00"],
+        "Miércoles": ["08:00", "09:00", "10:00", "11:00"],
+        "Jueves": ["08:00", "09:00", "10:00", "11:00"],
+        "Viernes": ["08:00", "09:00", "10:00", "11:00"],
+        "Sábado": ["08:00", "09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00"],
+        // Puedes añadir más días y horarios según tu disponibilidad
     };
 
-    // Obtener horarios para el día de la semana dado
-    const horariosDia = horariosDisponibles[diaSemana] || [];
-
-    return horariosDia;
+    return horariosDisponibles[diaSemana] || [];
 };
 
 // Función para borrar turnos antiguos
@@ -180,18 +179,18 @@ const borrarTurnosAntiguos = async () => {
         const db = await connectToDatabase();
         const turnosCollection = db.collection('turnos');
 
-        const result = await turnosCollection.deleteMany({
-            fechaHora: { $lt: new Date(Date.now() - 24 * 60 * 60 * 1000) }
-        });
-        console.log(`Turnos borrados: ${result.deletedCount}`);
-    } catch (err) {
-        console.error('Error al borrar turnos antiguos:', err);
+        // Borrar turnos antiguos (mayores a 24 horas)
+        const resultado = await turnosCollection.deleteMany({ fechaHora: { $lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } });
+        console.log(`Se han borrado ${resultado.deletedCount} turnos antiguos`);
+    } catch (error) {
+        console.error('Error al borrar turnos antiguos:', error);
     }
 };
 
-// Ejecutar la función de borrar turnos cada hora
-setInterval(borrarTurnosAntiguos, 60 * 60 * 1000); // 60 minutos * 60 segundos * 1000 milisegundos
+// Ejecutar la función para borrar turnos antiguos cada hora
+setInterval(borrarTurnosAntiguos, 60 * 60 * 1000); // Cada 60 minutos * 60 segundos * 1000 milisegundos
 
+// Iniciar el servidor
 app.listen(PORT, () => {
-    console.log(`Servidor escuchando en el puerto ${PORT}`);
+    console.log(`Servidor corriendo en el puerto ${PORT}`);
 });
