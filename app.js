@@ -102,9 +102,15 @@ app.get('/turnos/confirmar', async (req, res) => {
             tipoServicio
         });
 
-        // Formatear fecha y enviar correo electrónico de confirmación
+        // Formatear fecha
         const fechaFormateada = moment(external_reference).format('DD-MM-YYYY HH:mm');
-        await enviarCorreoElectronico(nombreCliente, fechaFormateada, tipoServicio, emailCliente);
+
+        // Enviar correo electrónico al cliente
+        await enviarCorreoElectronicoCliente(nombreCliente, fechaFormateada, tipoServicio, emailCliente);
+
+        // Enviar correo electrónico a ti mismo (opcional)
+        const emailPropietario = process.env.EMAIL_USER; // Obtener tu propio correo electrónico de las variables de entorno
+        await enviarCorreoElectronicoPropietario(nombreCliente, fechaFormateada, tipoServicio, emailPropietario);
 
         res.status(201).json({ message: 'Turno reservado exitosamente' });
     } catch (error) {
@@ -129,11 +135,9 @@ app.get('/turnos/horarios-disponibles', async (req, res) => {
         const db = await connectToDatabase();
         const turnosCollection = db.collection('turnos');
 
-        console.log("Fecha recibida en el backend:", fecha); // Debug
         // Obtener el día de la semana para la fecha especificada
         let diaSemana = moment(fecha).format('dddd');
         diaSemana = capitalizeFirstLetter(diaSemana); // Asegurarse de que el día de la semana está capitalizado
-        console.log("Día de la semana calculado:", diaSemana); // Debug
 
         // Verificar si es domingo y retornar un error si es así
         if (diaSemana.toLowerCase() === 'domingo') {
@@ -142,14 +146,10 @@ app.get('/turnos/horarios-disponibles', async (req, res) => {
 
         // Obtener los horarios disponibles para el día de la semana
         const horariosDia = obtenerHorariosDisponibles(diaSemana);
-        console.log("Horarios disponibles para el día:", horariosDia); // Debug
 
         // Obtener los turnos reservados para la fecha especificada
         const turnosReservados = await turnosCollection.find({ fechaHora: { $regex: `^${fecha}` } }).toArray();
-        console.log("Turnos reservados para la fecha:", turnosReservados); // Debug
-
         const horasReservadas = turnosReservados.map(turno => new Date(turno.fechaHora).getHours());
-        console.log("Horas reservadas:", horasReservadas); // Debug
 
         // Filtrar los horarios disponibles basados en los turnos reservados
         const horariosDisponiblesFiltrados = horariosDia.filter(hora => {
@@ -157,15 +157,12 @@ app.get('/turnos/horarios-disponibles', async (req, res) => {
             return !horasReservadas.includes(hour);
         });
 
-        console.log("Horarios disponibles filtrados:", horariosDisponiblesFiltrados); // Debug
         res.status(200).json(horariosDisponiblesFiltrados);
     } catch (error) {
         console.error('Error al obtener los horarios disponibles:', error);
         res.status(500).json({ message: 'Error interno al procesar la solicitud' });
     }
 });
-
-
 
 // Función para obtener los horarios disponibles según el día de la semana
 const obtenerHorariosDisponibles = (diaSemana) => {
@@ -179,13 +176,50 @@ const obtenerHorariosDisponibles = (diaSemana) => {
         // Puedes añadir más días y horarios según tu disponibilidad
     };
 
-    // Asegurarse de que diaSemana está en el formato correcto
-    console.log("Día de la semana recibido:", diaSemana); // Debug
-    console.log("Horarios para el día:", horariosDisponibles[diaSemana] || []); // Debug
-
     return horariosDisponibles[diaSemana] || [];
 };
 
+// Función para enviar correo electrónico al cliente
+const enviarCorreoElectronicoCliente = async (nombreCliente, fechaFormateada, tipoServicio, emailCliente) => {
+    try {
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: emailCliente,
+            subject: 'Confirmación de reserva de turno',
+            html: `
+                <p>Hola ${nombreCliente},</p>
+                <p>Te confirmamos que tu turno para el servicio ${tipoServicio} ha sido reservado para el día ${fechaFormateada}.</p>
+                <p>¡Esperamos verte pronto!</p>
+            `,
+        };
+
+        await transporter.sendMail(mailOptions);
+        console.log(`Correo electrónico enviado a ${emailCliente} con la confirmación del turno`);
+    } catch (error) {
+        console.error('Error al enviar correo electrónico al cliente:', error);
+        throw new Error('Error al enviar correo electrónico al cliente');
+    }
+};
+
+// Función para enviar correo electrónico al propietario (tú mismo)
+const enviarCorreoElectronicoPropietario = async (nombreCliente, fechaFormateada, tipoServicio, emailPropietario) => {
+    try {
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: process.env.EMAIL_USER,
+            subject: 'Nueva reserva de turno',
+            html: `
+                <p>Se ha reservado un nuevo turno por ${nombreCliente} para el servicio ${tipoServicio} el día ${fechaFormateada}.</p>
+            `,
+        };
+
+        await transporter.sendMail(mailOptions);
+        console.log(`Correo electrónico enviado a ${emailPropietario} con la nueva reserva de turno`);
+    } catch (error) {
+        console.error('Error al enviar correo electrónico al propietario:', error);
+        throw new Error('Error al enviar correo electrónico al propietario');
+    }
+};
 
 // Función para borrar turnos antiguos
 const borrarTurnosAntiguos = async () => {
