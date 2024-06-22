@@ -34,12 +34,11 @@ app.post('/turnos/reservar', async (req, res) => {
     const { fechaHora, nombreCliente, tipoServicio, montoSeña, emailCliente } = req.body;
 
     try {
-        const db = await connectToDatabase();
-        const turnosCollection = db.collection('turnos');
+        const connection = await connectToDatabase();
 
         // Verificar si el turno ya está reservado
-        const turnoExistente = await turnosCollection.findOne({ fechaHora });
-        if (turnoExistente) {
+        const [rows] = await connection.execute('SELECT * FROM turnos WHERE fechaHora = ?', [fechaHora]);
+        if (rows.length > 0) {
             return res.status(400).json({ message: 'El turno para esta fecha y hora ya está reservado' });
         }
 
@@ -92,15 +91,13 @@ app.get('/turnos/confirmar', async (req, res) => {
     }
 
     try {
-        const db = await connectToDatabase();
-        const turnosCollection = db.collection('turnos');
+        const connection = await connectToDatabase();
 
         // Insertar nuevo turno reservado
-        await turnosCollection.insertOne({
-            fechaHora: external_reference,
-            nombreCliente,
-            tipoServicio
-        });
+        await connection.execute(
+            'INSERT INTO turnos (fechaHora, nombreCliente, tipoServicio) VALUES (?, ?, ?)',
+            [external_reference, nombreCliente, tipoServicio]
+        );
 
         // Formatear fecha
         const fechaFormateada = moment(external_reference).format('DD-MM-YYYY HH:mm');
@@ -132,8 +129,7 @@ app.get('/turnos/horarios-disponibles', async (req, res) => {
     }
 
     try {
-        const db = await connectToDatabase();
-        const turnosCollection = db.collection('turnos');
+        const connection = await connectToDatabase();
 
         // Obtener el día de la semana para la fecha especificada
         let diaSemana = moment(fecha).format('dddd');
@@ -148,7 +144,7 @@ app.get('/turnos/horarios-disponibles', async (req, res) => {
         const horariosDia = obtenerHorariosDisponibles(diaSemana);
 
         // Obtener los turnos reservados para la fecha especificada
-        const turnosReservados = await turnosCollection.find({ fechaHora: { $regex: `^${fecha}` } }).toArray();
+        const [turnosReservados] = await connection.execute('SELECT fechaHora FROM turnos WHERE fechaHora LIKE ?', [`${fecha}%`]);
         const horasReservadas = turnosReservados.map(turno => new Date(turno.fechaHora).getHours());
 
         // Filtrar los horarios disponibles basados en los turnos reservados
@@ -224,12 +220,11 @@ const enviarCorreoElectronicoPropietario = async (nombreCliente, fechaFormateada
 // Función para borrar turnos antiguos
 const borrarTurnosAntiguos = async () => {
     try {
-        const db = await connectToDatabase();
-        const turnosCollection = db.collection('turnos');
+        const connection = await connectToDatabase();
 
         // Borrar turnos antiguos (mayores a 24 horas)
-        const resultado = await turnosCollection.deleteMany({ fechaHora: { $lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } });
-        console.log(`Se han borrado ${resultado.deletedCount} turnos antiguos`);
+        const [resultado] = await connection.execute('DELETE FROM turnos WHERE fechaHora < ?', [new Date(Date.now() - 24 * 60 * 60 * 1000)]);
+        console.log(`Se han borrado ${resultado.affectedRows} turnos antiguos`);
     } catch (error) {
         console.error('Error al borrar turnos antiguos:', error);
     }
