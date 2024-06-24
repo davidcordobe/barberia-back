@@ -13,6 +13,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Configurar el directorio estático
+app.use('/assets', express.static(path.join(__dirname, 'src/assets')));
+
 // Configurar MercadoPago
 mercadopago.configure({
     access_token: process.env.MERCADOPAGO_ACCESS_TOKEN
