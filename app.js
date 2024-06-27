@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
-const connectToDatabase = require('./db');
+const { MongoClient } = require('mongodb');
 const moment = require('moment');
 require('moment/locale/es'); // Asegurarse de requerir el locale español
 moment.locale('es'); // Configurar moment para usar español
@@ -13,8 +13,23 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Configurar el directorio estático
-app.use('/assets', express.static(path.join(__dirname, 'src/assets')));
+// Configurar MongoDB
+const uri = process.env.DB_URI;
+let db;
+
+const connectToDatabase = async () => {
+    if (db) return db;
+    try {
+        const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
+        await client.connect();
+        db = client.db();
+        console.log('Conexión a la base de datos exitosa');
+        return db;
+    } catch (error) {
+        console.error('Error al conectar a la base de datos:', error);
+        throw error;
+    }
+};
 
 // Configurar MercadoPago
 mercadopago.configure({
@@ -37,11 +52,12 @@ app.post('/turnos/reservar', async (req, res) => {
     const { fechaHora, nombreCliente, tipoServicio, montoSeña, emailCliente } = req.body;
 
     try {
-        const connection = await connectToDatabase();
+        const db = await connectToDatabase();
+        const turnosCollection = db.collection('turnos');
 
         // Verificar si el turno ya está reservado
-        const [rows] = await connection.execute('SELECT * FROM turnos WHERE fechaHora = ?', [fechaHora]);
-        if (rows.length > 0) {
+        const turnoExistente = await turnosCollection.findOne({ fechaHora });
+        if (turnoExistente) {
             return res.status(400).json({ message: 'El turno para esta fecha y hora ya está reservado' });
         }
 
@@ -94,13 +110,15 @@ app.get('/turnos/confirmar', async (req, res) => {
     }
 
     try {
-        const connection = await connectToDatabase();
+        const db = await connectToDatabase();
+        const turnosCollection = db.collection('turnos');
 
         // Insertar nuevo turno reservado
-        await connection.execute(
-            'INSERT INTO turnos (fechaHora, nombreCliente, tipoServicio) VALUES (?, ?, ?)',
-            [external_reference, nombreCliente, tipoServicio]
-        );
+        await turnosCollection.insertOne({
+            fechaHora: external_reference,
+            nombreCliente,
+            tipoServicio
+        });
 
         // Formatear fecha
         const fechaFormateada = moment(external_reference).format('DD-MM-YYYY HH:mm');
@@ -132,7 +150,8 @@ app.get('/turnos/horarios-disponibles', async (req, res) => {
     }
 
     try {
-        const connection = await connectToDatabase();
+        const db = await connectToDatabase();
+        const turnosCollection = db.collection('turnos');
 
         // Obtener el día de la semana para la fecha especificada
         let diaSemana = moment(fecha).format('dddd');
@@ -147,7 +166,7 @@ app.get('/turnos/horarios-disponibles', async (req, res) => {
         const horariosDia = obtenerHorariosDisponibles(diaSemana);
 
         // Obtener los turnos reservados para la fecha especificada
-        const [turnosReservados] = await connection.execute('SELECT fechaHora FROM turnos WHERE fechaHora LIKE ?', [`${fecha}%`]);
+        const turnosReservados = await turnosCollection.find({ fechaHora: { $regex: `^${fecha}` } }).toArray();
         const horasReservadas = turnosReservados.map(turno => new Date(turno.fechaHora).getHours());
 
         // Filtrar los horarios disponibles basados en los turnos reservados
@@ -223,11 +242,12 @@ const enviarCorreoElectronicoPropietario = async (nombreCliente, fechaFormateada
 // Función para borrar turnos antiguos
 const borrarTurnosAntiguos = async () => {
     try {
-        const connection = await connectToDatabase();
+        const db = await connectToDatabase();
+        const turnosCollection = db.collection('turnos');
 
         // Borrar turnos antiguos (mayores a 24 horas)
-        const [resultado] = await connection.execute('DELETE FROM turnos WHERE fechaHora < ?', [new Date(Date.now() - 24 * 60 * 60 * 1000)]);
-        console.log(`Se han borrado ${resultado.affectedRows} turnos antiguos`);
+        const resultado = await turnosCollection.deleteMany({ fechaHora: { $lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } });
+        console.log(`Se han borrado ${resultado.deletedCount} turnos antiguos`);
     } catch (error) {
         console.error('Error al borrar turnos antiguos:', error);
     }
