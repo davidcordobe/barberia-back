@@ -84,7 +84,7 @@ app.post('/turnos/reservar', async (req, res) => {
                 pending: `${process.env.BACKEND_URL}`
             },
             auto_return: 'approved',
-            external_reference: fechaHora // Usamos fechaHora como referencia externa
+            external_reference: fechaHora 
         };
 
         // Crear la preferencia en MercadoPago
@@ -185,13 +185,12 @@ app.get('/turnos/horarios-disponibles', async (req, res) => {
 // Función para obtener los horarios disponibles según el día de la semana
 const obtenerHorariosDisponibles = (diaSemana) => {
     const horariosDisponibles = {
-        "Lunes": ["08:00", "09:00", "10:00", "11:00"],
-        "Martes": ["08:00", "09:00", "10:00", "11:00"],
-        "Miércoles": ["08:00", "09:00", "10:00", "11:00"],
-        "Jueves": ["08:00", "09:00", "10:00", "11:00"],
-        "Viernes": ["08:00", "09:00", "10:00", "11:00"],
-        "Sábado": ["08:00", "09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00"],
-        // Puedes añadir más días y horarios según tu disponibilidad
+        "Lunes": ["15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"],
+        "Martes": ["15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"],
+        "Miércoles": ["15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"],
+        "Jueves": ["15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"],
+        "Viernes": ["15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"],
+        "Sábado": ["08:00", "09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"],
     };
 
     return horariosDisponibles[diaSemana] || [];
@@ -200,6 +199,11 @@ const obtenerHorariosDisponibles = (diaSemana) => {
 // Función para enviar correo electrónico al cliente
 const enviarCorreoElectronicoCliente = async (nombreCliente, fechaFormateada, tipoServicio, emailCliente) => {
     try {
+
+
+        // URL del mapa interactivo
+        const mapaUrl = process.env.UBICACION;
+
         const mailOptions = {
             from: process.env.EMAIL_USER,
             to: emailCliente,
@@ -208,6 +212,8 @@ const enviarCorreoElectronicoCliente = async (nombreCliente, fechaFormateada, ti
                 <p>Hola ${nombreCliente},</p>
                 <p>Te confirmamos que tu turno para el servicio ${tipoServicio} ha sido reservado para el día ${fechaFormateada}.</p>
                 <p>¡Esperamos verte pronto!</p>
+                <p>Ubicación de nuestra barbería:</p>
+                <a href="${mapaUrl}"><p>Ubicación de Google Maps</p></a>
             `,
         };
 
@@ -218,6 +224,7 @@ const enviarCorreoElectronicoCliente = async (nombreCliente, fechaFormateada, ti
         throw new Error('Error al enviar correo electrónico al cliente');
     }
 };
+
 
 // Función para enviar correo electrónico al propietario (tú mismo)
 const enviarCorreoElectronicoPropietario = async (nombreCliente, fechaFormateada, tipoServicio, emailPropietario) => {
